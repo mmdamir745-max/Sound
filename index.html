@@ -567,20 +567,13 @@
                 }
             }
 
-            function resetAll(clearCode = true) {
+            function resetAll() {
                 if (mediaRecorder && isRecording) {
                     mediaRecorder.stop();
                 }
                 audioChunks = [];
                 recordedBlob = null;
                 currentNationalCode = '';
-                if (clearCode) {
-                    nationalCodeInput.value = '';
-                    voiceHint.textContent = navigator.onLine
-                        ? 'برای گفتن کد، روی 🎤 کلیک کنید و اعداد را واضح بگویید'
-                        : '📡 تشخیص گفتار به اینترنت نیاز دارد — از صفحه‌کلید عددی استفاده کنید';
-                    voiceHint.style.color = navigator.onLine ? '#5e6f8d' : '#c53030';
-                }
                 if (currentAudioURL) {
                     URL.revokeObjectURL(currentAudioURL);
                     currentAudioURL = null;
@@ -739,8 +732,7 @@
                 }
 
                 if (recordedBlob) {
-                    // ضبط مجدد: صوت قبلی پاک می‌شود ولی کد ملی واردشده باقی می‌ماند
-                    resetAll(false);
+                    resetAll();
                 }
 
                 try {
@@ -837,9 +829,8 @@
 
                 let extension = 'webm';
                 if (recordedBlob.type.includes('wav')) extension = 'wav';
-                else if (recordedBlob.type.includes('mp3') || recordedBlob.type.includes('mpeg')) extension = 'mp3';
+                else if (recordedBlob.type.includes('mp3')) extension = 'mp3';
                 else if (recordedBlob.type.includes('ogg')) extension = 'ogg';
-                else if (recordedBlob.type.includes('mp4') || recordedBlob.type.includes('aac')) extension = 'm4a'; // خروجی Safari در آیفون/مک
 
                 const fileName = `sound_${code}.${extension}`;
                 const url = URL.createObjectURL(recordedBlob);
@@ -866,7 +857,7 @@
             stopBtn.addEventListener('click', stopRecording);
             playBtn.addEventListener('click', playAudio);
             downloadBtn.addEventListener('click', downloadAudio);
-            resetBtn.addEventListener('click', () => resetAll(true));
+            resetBtn.addEventListener('click', resetAll);
 
             // تنظیم اولیه
             updateButtons();
