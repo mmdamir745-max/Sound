@@ -205,6 +205,13 @@
         .btn-download:disabled {
             background: #b8a5d9;
         }
+        .btn-share {
+            background: #0e9f9f;
+            color: white;
+        }
+        .btn-share:disabled {
+            background: #9ad3d3;
+        }
         .btn-reset {
             background: #ed8936;
             color: white;
@@ -419,6 +426,7 @@
         <!-- دکمه دانلود و ریست -->
         <div class="btn-group">
             <button class="btn btn-download" id="downloadBtn" disabled>⬇️ دانلود با کد ملی</button>
+            <button class="btn btn-share" id="shareBtn" disabled>📤 اشتراک‌گذاری</button>
             <button class="btn btn-reset" id="resetBtn" disabled>🔄 ریست</button>
         </div>
         <div id="errorMsg" class="error-msg"></div>
@@ -440,6 +448,7 @@
             const stopBtn = document.getElementById('stopBtn');
             const playBtn = document.getElementById('playBtn');
             const downloadBtn = document.getElementById('downloadBtn');
+            const shareBtn = document.getElementById('shareBtn');
             const resetBtn = document.getElementById('resetBtn');
             const audioPlayer = document.getElementById('audioPlayer');
             const statusText = document.getElementById('statusText');
@@ -509,11 +518,13 @@
                 stopBtn.disabled = !isRecording;
                 playBtn.disabled = !hasBlob;
                 downloadBtn.disabled = !hasBlob || !codeValid;
+                shareBtn.disabled = !hasBlob || !codeValid;
                 resetBtn.disabled = isRecording || !hasBlob;
 
-                // اگر کد ملی تغییر کرده و با کد ذخیره‌شده همخوانی ندارد، دانلود غیرفعال می‌شود
+                // اگر کد ملی تغییر کرده و با کد ذخیره‌شده همخوانی ندارد، دانلود و اشتراک غیرفعال می‌شود
                 if (hasBlob && currentNationalCode && code !== currentNationalCode) {
                     downloadBtn.disabled = true;
+                    shareBtn.disabled = true;
                 }
 
                 // دکمه گفتن: فقط وقتی فعال که ضبط در حال انجام نباشد، تشخیص گوش ندهد و اینترنت وصل باشد
@@ -567,13 +578,20 @@
                 }
             }
 
-            function resetAll() {
+            function resetAll(clearCode = true) {
                 if (mediaRecorder && isRecording) {
                     mediaRecorder.stop();
                 }
                 audioChunks = [];
                 recordedBlob = null;
                 currentNationalCode = '';
+                if (clearCode) {
+                    nationalCodeInput.value = '';
+                    voiceHint.textContent = navigator.onLine
+                        ? 'برای گفتن کد، روی 🎤 کلیک کنید و اعداد را واضح بگویید'
+                        : '📡 تشخیص گفتار به اینترنت نیاز دارد — از صفحه‌کلید عددی استفاده کنید';
+                    voiceHint.style.color = navigator.onLine ? '#5e6f8d' : '#c53030';
+                }
                 if (currentAudioURL) {
                     URL.revokeObjectURL(currentAudioURL);
                     currentAudioURL = null;
@@ -732,7 +750,8 @@
                 }
 
                 if (recordedBlob) {
-                    resetAll();
+                    // ضبط مجدد: صوت قبلی پاک می‌شود ولی کد ملی واردشده باقی می‌ماند
+                    resetAll(false);
                 }
 
                 try {
@@ -812,27 +831,35 @@
                 }
             }
 
-            function downloadAudio() {
+            // بررسی اعتبار قبل از دانلود/اشتراک — در صورت مشکل، پیام خطا و مقدار null برمی‌گرداند
+            function getValidatedFileName() {
                 const code = nationalCodeInput.value.trim();
                 if (!isValidNationalCode(code)) {
                     showError('کد ملی نامعتبر است. لطفاً ۱۰ رقم وارد کنید.');
-                    return;
+                    return null;
                 }
                 if (!recordedBlob) {
                     showError('ابتدا صدایی را ضبط کنید.');
-                    return;
+                    return null;
                 }
                 if (code !== currentNationalCode) {
                     showError('کد ملی وارد شده با کد ملی مربوط به این صوت مطابقت ندارد. لطفاً ریست کنید و دوباره ضبط کنید.');
-                    return;
+                    return null;
                 }
 
                 let extension = 'webm';
                 if (recordedBlob.type.includes('wav')) extension = 'wav';
-                else if (recordedBlob.type.includes('mp3')) extension = 'mp3';
+                else if (recordedBlob.type.includes('mp3') || recordedBlob.type.includes('mpeg')) extension = 'mp3';
                 else if (recordedBlob.type.includes('ogg')) extension = 'ogg';
+                else if (recordedBlob.type.includes('mp4') || recordedBlob.type.includes('aac')) extension = 'm4a'; // خروجی Safari در آیفون/مک
 
-                const fileName = `sound_${code}.${extension}`;
+                return `sound_${code}.${extension}`;
+            }
+
+            function downloadAudio() {
+                const fileName = getValidatedFileName();
+                if (!fileName) return;
+
                 const url = URL.createObjectURL(recordedBlob);
                 const a = document.createElement('a');
                 a.href = url;
@@ -842,6 +869,34 @@
                 document.body.removeChild(a);
                 setTimeout(() => URL.revokeObjectURL(url), 5000);
                 clearError();
+            }
+
+            // ========== اشتراک‌گذاری (Web Share API) ==========
+            async function shareAudio() {
+                const fileName = getValidatedFileName();
+                if (!fileName) return;
+
+                const file = new File([recordedBlob], fileName, { type: recordedBlob.type || 'audio/webm' });
+
+                // بررسی پشتیبانی از اشتراک فایل
+                if (navigator.canShare && navigator.canShare({ files: [file] })) {
+                    try {
+                        await navigator.share({
+                            files: [file],
+                            title: 'ضبط صوت با کد ملی',
+                            text: 'فایل صوتی با کد ملی ' + currentNationalCode
+                        });
+                        clearError();
+                    } catch (err) {
+                        // لغو توسط کاربر خطا محسوب نمی‌شود
+                        if (err.name !== 'AbortError') {
+                            console.warn('خطا در اشتراک‌گذاری:', err);
+                            showError('اشتراک‌گذاری انجام نشد. می‌توانید از دکمه دانلود استفاده کنید.');
+                        }
+                    }
+                } else {
+                    showError('مرورگر شما از اشتراک‌گذاری فایل پشتیبانی نمی‌کند. از دکمه دانلود استفاده کنید.');
+                }
             }
 
             // رویدادهای ورودی کد ملی
@@ -857,7 +912,13 @@
             stopBtn.addEventListener('click', stopRecording);
             playBtn.addEventListener('click', playAudio);
             downloadBtn.addEventListener('click', downloadAudio);
-            resetBtn.addEventListener('click', resetAll);
+            shareBtn.addEventListener('click', shareAudio);
+            resetBtn.addEventListener('click', () => resetAll(true));
+
+            // اگر مرورگر اصلاً از اشتراک فایل پشتیبانی نمی‌کند، دکمه را مخفی کن
+            if (!navigator.share || !navigator.canShare) {
+                shareBtn.style.display = 'none';
+            }
 
             // تنظیم اولیه
             updateButtons();
@@ -865,6 +926,7 @@
             stopBtn.disabled = true;
             playBtn.disabled = true;
             downloadBtn.disabled = true;
+            shareBtn.disabled = true;
             resetBtn.disabled = true;
             codeDisplayArea.style.display = 'none';
             updateOnlineState();
